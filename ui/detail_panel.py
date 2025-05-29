@@ -2,6 +2,7 @@
 Detail Panel Widget for DOI Citation Manager
 - 모든 인용 형식 자동 표시
 - 향상된 UI/UX
+- References 탭
 """
 
 from PyQt6.QtWidgets import (
@@ -99,6 +100,71 @@ class CitationDisplay(QFrame):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.citation_text)
         self.copy_requested.emit(f"Copied {self.format_name} citation to clipboard")
+
+
+class ReferenceItem(QFrame):
+    """Widget for displaying individual reference"""
+
+    def __init__(self, reference_data, ref_number):
+        super().__init__()
+        self.reference_data = reference_data
+        self.ref_number = ref_number
+        self.setup_ui()
+
+    def setup_ui(self):
+        """Setup reference item UI"""
+        self.setFrameStyle(QFrame.Shape.StyledPanel)
+        self.setLineWidth(1)
+        self.setStyleSheet(
+            "QFrame { background-color: #fafafa; border-radius: 4px; margin: 2px; }"
+            "QFrame:hover { background-color: #f0f0f0; }"
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
+
+        # Reference number and main info
+        header_layout = QHBoxLayout()
+
+        ref_num_label = QLabel(f"[{self.ref_number}]")
+        ref_num_label.setStyleSheet(
+            "font-weight: bold; color: #1976D2; font-size: 10px; min-width: 30px;"
+        )
+        header_layout.addWidget(ref_num_label)
+
+        # Main reference text
+        if "text" in self.reference_data:
+            ref_text = self.reference_data["text"][:200]  # Truncate long references
+            if len(self.reference_data["text"]) > 200:
+                ref_text += "..."
+        else:
+            # Construct from available fields
+            parts = []
+            if "author" in self.reference_data:
+                parts.append(str(self.reference_data["author"]))
+            if "year" in self.reference_data:
+                parts.append(f"({self.reference_data['year']})")
+            if "journal" in self.reference_data:
+                parts.append(self.reference_data["journal"])
+            ref_text = (
+                " ".join(parts) if parts else "Reference information not available"
+            )
+
+        ref_label = QLabel(ref_text)
+        ref_label.setWordWrap(True)
+        ref_label.setStyleSheet("font-size: 10px; color: #333;")
+        header_layout.addWidget(ref_label, 1)
+
+        layout.addLayout(header_layout)
+
+        # DOI if available
+        if "DOI" in self.reference_data:
+            doi_label = QLabel(f"DOI: {self.reference_data['DOI']}")
+            doi_label.setStyleSheet(
+                "font-size: 9px; color: #2196F3; font-family: monospace;"
+            )
+            layout.addWidget(doi_label)
 
 
 class TagWidget(QWidget):
@@ -257,6 +323,10 @@ class DetailPanelWidget(QWidget):
         self.citations_tab = self.create_citations_tab()
         self.tabs.addTab(self.citations_tab, "📚 Citations")
 
+        # References tab (새로 추가)
+        self.references_tab = self.create_references_tab()
+        self.tabs.addTab(self.references_tab, "🔗 References")
+
         # Abstract tab
         self.abstract_tab = self.create_abstract_tab()
         self.tabs.addTab(self.abstract_tab, "📄 Abstract")
@@ -362,6 +432,84 @@ class DetailPanelWidget(QWidget):
 
         return widget
 
+    def create_references_tab(self):
+        """Create references tab (새로 추가)"""
+        widget = QWidget()
+
+        # 전체 탭에 스크롤 적용
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # 스크롤 내용 위젯
+        scroll_content = QWidget()
+        layout = QVBoxLayout(scroll_content)
+        layout.setSpacing(12)
+
+        # Header section
+        header_layout = QHBoxLayout()
+        header_label = QLabel("🔗 References")
+        header_label.setStyleSheet(
+            "font-weight: bold; font-size: 14px; color: #1976D2;"
+        )
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+
+        # Reference statistics section
+        self.ref_stats_group = QGroupBox("📊 Citation Information")
+        ref_stats_layout = QVBoxLayout(self.ref_stats_group)
+
+        self.ref_count_label = QLabel("References: Loading...")
+        self.ref_count_label.setStyleSheet("font-size: 12px; margin-bottom: 4px;")
+        ref_stats_layout.addWidget(self.ref_count_label)
+
+        self.cited_by_label = QLabel("Cited by: Loading...")
+        self.cited_by_label.setStyleSheet("font-size: 12px; margin-bottom: 4px;")
+        ref_stats_layout.addWidget(self.cited_by_label)
+
+        self.paper_type_label = QLabel("Type: Loading...")
+        self.paper_type_label.setStyleSheet("font-size: 12px; margin-bottom: 8px;")
+        ref_stats_layout.addWidget(self.paper_type_label)
+
+        layout.addWidget(self.ref_stats_group)
+
+        # References list section (스크롤 없이 전체 표시)
+        self.ref_list_group = QGroupBox("📋 Reference List")
+        ref_list_layout = QVBoxLayout(self.ref_list_group)
+
+        # References container (스크롤 없이 직접 추가)
+        self.references_widget = QWidget()
+        self.references_layout = QVBoxLayout(self.references_widget)
+        self.references_layout.setSpacing(6)
+
+        ref_list_layout.addWidget(self.references_widget)
+        layout.addWidget(self.ref_list_group)
+
+        # Info note
+        info_label = QLabel(
+            "💡 Reference information is provided by CrossRef.\n"
+            "Some papers may have limited reference data available."
+        )
+        info_label.setStyleSheet(
+            "font-size: 10px; color: #666; font-style: italic; "
+            "padding: 8px; background-color: #f9f9f9; border-radius: 4px;"
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        # 스크롤 콘텐츠 완성
+        layout.addStretch()
+        scroll_area.setWidget(scroll_content)
+
+        # 메인 위젯 레이아웃
+        main_layout = QVBoxLayout(widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll_area)
+
+        return widget
+
     def create_abstract_tab(self):
         """Create abstract tab"""
         widget = QWidget()
@@ -462,6 +610,9 @@ class DetailPanelWidget(QWidget):
         # Update citations tab (모든 형식 표시)
         self.display_citations(paper_data)
 
+        # Update references tab (새로 추가)
+        self.display_references(paper_data)
+
         # Update abstract tab
         abstract = paper_data.get("abstract", "")
         self.abstract_text.setPlainText(
@@ -471,6 +622,51 @@ class DetailPanelWidget(QWidget):
         # Update notes tab
         notes = paper_data.get("notes", "")
         self.notes_text.setPlainText(notes)
+
+    def display_references(self, paper_data):
+        """Display reference information (새로 추가)"""
+        ref_info = paper_data.get("reference_info", {})
+
+        # Update statistics
+        ref_count = ref_info.get("references_count", 0)
+        cited_by_count = ref_info.get("is_referenced_by_count", 0)
+        paper_type = paper_data.get("type", "unknown")
+
+        self.ref_count_label.setText(f"📚 References: {ref_count}")
+        self.cited_by_label.setText(f"📈 Cited by: {cited_by_count}")
+        self.paper_type_label.setText(f"🏷️ Type: {paper_type}")
+
+        # Clear existing reference widgets
+        for i in reversed(range(self.references_layout.count())):
+            child = self.references_layout.itemAt(i).widget()
+            if child:
+                child.deleteLater()
+
+        # Display reference list (모든 레퍼런스 표시, 제한 없음)
+        references = ref_info.get("references", [])
+
+        if not references:
+            no_refs_label = QLabel("No reference list available for this paper.")
+            no_refs_label.setStyleSheet(
+                "font-style: italic; color: #666; padding: 20px; text-align: center;"
+            )
+            no_refs_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.references_layout.addWidget(no_refs_label)
+        else:
+            # 모든 references 표시 (제한 없음)
+            for i, ref_data in enumerate(references, 1):
+                ref_widget = ReferenceItem(ref_data, i)
+                self.references_layout.addWidget(ref_widget)
+
+            # 총 개수 표시
+            if len(references) > 10:  # 10개 이상일 때만 총 개수 표시
+                count_label = QLabel(f"📊 Total: {len(references)} references")
+                count_label.setStyleSheet(
+                    "font-weight: bold; color: #1976D2; padding: 8px; "
+                    "text-align: center; border-top: 1px solid #eee; margin-top: 10px;"
+                )
+                count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.references_layout.addWidget(count_label)
 
     def extract_year(self, paper_data):
         """Extract publication year"""
@@ -609,6 +805,16 @@ class DetailPanelWidget(QWidget):
         self.abstract_text.setPlaceholderText("Select a paper to view its abstract")
         self.notes_text.setPlaceholderText("")
 
+        # Clear references tab
+        self.ref_count_label.setText("References: N/A")
+        self.cited_by_label.setText("Cited by: N/A")
+        self.paper_type_label.setText("Type: N/A")
+
+        for i in reversed(range(self.references_layout.count())):
+            child = self.references_layout.itemAt(i).widget()
+            if child:
+                child.deleteLater()
+
         # Show paper list in citations tab
         for i in reversed(range(self.citations_layout.count())):
             child = self.citations_layout.itemAt(i).widget()
@@ -669,6 +875,16 @@ class DetailPanelWidget(QWidget):
         self.abstract_text.setPlaceholderText("Select a paper to view its abstract")
         self.notes_text.setPlaceholderText("")
 
+        # Clear references tab
+        self.ref_count_label.setText("References: N/A")
+        self.cited_by_label.setText("Cited by: N/A")
+        self.paper_type_label.setText("Type: N/A")
+
+        for i in reversed(range(self.references_layout.count())):
+            child = self.references_layout.itemAt(i).widget()
+            if child:
+                child.deleteLater()
+
         # Show results in citations tab
         for i in reversed(range(self.citations_layout.count())):
             child = self.citations_layout.itemAt(i).widget()
@@ -712,7 +928,7 @@ class DetailPanelWidget(QWidget):
                 item_text = f"{title}{year_text}\n{author_name}"
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, paper)
-                list_widget.addItem(item)
+                list_widget.addList(item)
 
             list_widget.itemClicked.connect(self.on_paper_list_clicked)
             self.citations_layout.addWidget(list_widget)

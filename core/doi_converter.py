@@ -2,6 +2,7 @@
 DOI Converter - Core logic for DOI to citation conversion
 - 모든 인용 형식을 자동으로 생성
 - 향상된 오류 처리
+- Reference 정보 추출
 """
 
 import requests
@@ -184,6 +185,9 @@ class DOIConverter:
         publisher = work.get("publisher", "")
         work_type = work.get("type", "journal-article")
 
+        # Extract reference information (새로 추가)
+        reference_info = self.extract_reference_info(work)
+
         return {
             "id": doi,  # Use DOI as ID
             "title": title,
@@ -204,7 +208,53 @@ class DOIConverter:
             "subject": work.get("subject", []),
             "ISSN": work.get("ISSN", []),
             "ISBN": work.get("ISBN", []),
+            # Reference 정보 추가
+            "reference_info": reference_info,
         }
+
+    def extract_reference_info(self, work):
+        """Extract reference information from CrossRef data"""
+        reference_info = {
+            "references_count": work.get("references-count", 0),
+            "is_referenced_by_count": work.get("is-referenced-by-count", 0),
+            "references": [],
+        }
+
+        # Extract reference list if available
+        if "reference" in work and isinstance(work["reference"], list):
+            for ref in work["reference"]:
+                ref_data = {}
+
+                # Extract DOI if available
+                if "DOI" in ref:
+                    ref_data["DOI"] = ref["DOI"]
+
+                # Extract unstructured reference text
+                if "unstructured" in ref:
+                    ref_data["text"] = ref["unstructured"]
+
+                # Extract author
+                if "author" in ref:
+                    ref_data["author"] = ref["author"]
+
+                # Extract year
+                if "year" in ref:
+                    ref_data["year"] = ref["year"]
+
+                # Extract journal/container
+                if "journal-title" in ref:
+                    ref_data["journal"] = ref["journal-title"]
+                elif "container-title" in ref:
+                    ref_data["journal"] = ref["container-title"]
+
+                # Extract key (reference number)
+                if "key" in ref:
+                    ref_data["key"] = ref["key"]
+
+                if ref_data:  # Only add if we got some data
+                    reference_info["references"].append(ref_data)
+
+        return reference_info
 
     def clean_abstract(self, abstract):
         """Clean abstract by removing HTML/XML tags and fixing encoding"""
@@ -269,6 +319,12 @@ class DOIConverter:
                 "subject": data.get("subject", []),
                 "ISSN": data.get("ISSN", []),
                 "ISBN": data.get("ISBN", []),
+                # Fallback에서는 reference 정보가 제한적
+                "reference_info": {
+                    "references_count": 0,
+                    "is_referenced_by_count": 0,
+                    "references": [],
+                },
             }
 
         except requests.exceptions.Timeout:
